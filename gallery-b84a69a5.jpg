@@ -1,0 +1,142 @@
+'use client';
+
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+const SECTORS = ['Tableware', 'Tiles', 'Sanitary Ware', 'Machinery', 'Kiln Furniture', 'Logistics', 'Technical Support', 'Other'];
+
+export default function ContactPage() {
+  // useSearchParams() opts a subtree out of static rendering unless it's
+  // wrapped in Suspense — this boundary is what lets the rest of the page
+  // (and the rest of the site) stay statically generated at build time.
+  return (
+    <Suspense fallback={<main className="section wrap" style={{ maxWidth: 600 }} />}>
+      <ContactForm />
+    </Suspense>
+  );
+}
+
+function ContactForm() {
+  const searchParams = useSearchParams();
+  const prefillProduct = searchParams.get('product');
+
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [refNumber, setRefNumber] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setStatus('sending');
+    setErrorMsg(null);
+
+    const form = new FormData(e.currentTarget);
+    const payload = {
+      contactName: String(form.get('contactName') ?? ''),
+      contactEmail: String(form.get('contactEmail') ?? ''),
+      contactPhone: String(form.get('contactPhone') ?? ''),
+      company: String(form.get('company') ?? ''),
+      sector: String(form.get('sector') ?? 'Other'),
+      message: String(form.get('message') ?? ''),
+      items: prefillProduct ? [{ productName: prefillProduct }] : [],
+      website: String(form.get('website') ?? ''), // honeypot — stays empty for real users
+    };
+
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus('error');
+        setErrorMsg(data.error ?? 'Something went wrong. Please try again.');
+        return;
+      }
+      setRefNumber(data.refNumber);
+      setStatus('sent');
+    } catch {
+      setStatus('error');
+      setErrorMsg('Network error — please check your connection and try again.');
+    }
+  }
+
+  if (status === 'sent') {
+    return (
+      <main className="section wrap" style={{ maxWidth: 600, textAlign: 'center' }}>
+        <h1 style={{ fontSize: '1.8rem', marginBottom: '.8rem' }}>Request received</h1>
+        <p style={{ color: 'var(--ink-soft)' }}>
+          Your reference number is <strong style={{ color: 'var(--copper)' }}>{refNumber}</strong>. This request is
+          now stored in the SK Trade International system — a team member will follow up by phone or email.
+        </p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="section wrap" style={{ maxWidth: 600 }}>
+      <p className="eyebrow">Contact</p>
+      <h1 style={{ fontSize: 'clamp(2rem,3vw,2.8rem)', marginBottom: '.6rem' }}>Request a Quote</h1>
+      <p style={{ color: 'var(--ink-soft)', marginBottom: '1.6rem' }}>
+        This form is fully live — submissions are validated, rate-limited, and stored in the real database behind
+        this build, and appear immediately in the admin dashboard under Quote Requests.
+      </p>
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <input type="text" name="website" tabIndex={-1} autoComplete="off" style={{ position: 'absolute', left: '-9999px' }} aria-hidden="true" />
+
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Name
+          <input name="contactName" required style={inputStyle} />
+        </label>
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Email
+          <input name="contactEmail" type="email" required style={inputStyle} />
+        </label>
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Phone
+          <input name="contactPhone" required style={inputStyle} />
+        </label>
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Company
+          <input name="company" style={inputStyle} />
+        </label>
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Sector
+          <select name="sector" style={inputStyle} defaultValue="Other">
+            {SECTORS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: '.85rem', fontWeight: 700 }}>
+          Message
+          <textarea
+            name="message"
+            required
+            defaultValue={prefillProduct ? `I'd like a quote for: ${prefillProduct}` : ''}
+            rows={4}
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </label>
+
+        {status === 'error' && <p style={{ color: 'var(--kiln)', fontSize: '.85rem' }}>{errorMsg}</p>}
+
+        <button type="submit" className="btn btn--primary" disabled={status === 'sending'}>
+          {status === 'sending' ? 'Sending…' : 'Send Request'}
+        </button>
+      </form>
+    </main>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  marginTop: '.4rem',
+  padding: '.75em .9em',
+  borderRadius: 'var(--r-sm)',
+  border: '1px solid var(--line-strong)',
+  background: 'var(--bg)',
+  color: 'var(--ink)',
+  fontFamily: 'inherit',
+  fontSize: '.92rem',
+};

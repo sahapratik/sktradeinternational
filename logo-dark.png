@@ -1,0 +1,44 @@
+import Link from 'next/link';
+import { getProductCategories, getProducts } from '@/db';
+
+export const dynamic = 'force-dynamic';
+
+export default async function ProductsPage({ searchParams }: { searchParams: { category?: string } }) {
+  const categories = getProductCategories();
+  const products = getProducts({ categorySlug: searchParams.category });
+
+  return (
+    <main className="section wrap">
+      <p className="eyebrow">Products</p>
+      <h1 style={{ fontSize: 'clamp(2rem,3vw,3rem)', marginBottom: '1.5rem' }}>Materials &amp; machinery catalogue</h1>
+
+      <div style={{ display: 'flex', gap: '.6rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        <Link href="/products" className="btn btn--ghost" style={{ padding: '.5em 1.1em', fontSize: '.82rem', ...(!searchParams.category ? { borderColor: 'var(--copper)', color: 'var(--copper)' } : {}) }}>
+          All
+        </Link>
+        {categories.map((c) => (
+          <Link
+            key={c.id}
+            href={`/products?category=${c.slug}`}
+            className="btn btn--ghost"
+            style={{ padding: '.5em 1.1em', fontSize: '.82rem', ...(searchParams.category === c.slug ? { borderColor: 'var(--copper)', color: 'var(--copper)' } : {}) }}
+          >
+            {c.title}
+          </Link>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px,1fr))', gap: '1.2rem' }}>
+        {products.map((p) => (
+          <Link key={p.id} href={`/products/${p.slug}`} className="card" style={{ padding: '1.4rem', textDecoration: 'none', display: 'block' }}>
+            <div style={{ fontSize: '.7rem', textTransform: 'uppercase', color: 'var(--ink-faint)', fontWeight: 700 }}>{p.category_title}</div>
+            <h3 style={{ fontSize: '1.05rem', margin: '.4rem 0 .5rem', color: 'var(--ink)' }}>{p.title}</h3>
+            <p style={{ fontSize: '.87rem', color: 'var(--ink-soft)' }}>{p.summary}</p>
+            <div style={{ fontSize: '.78rem', color: 'var(--copper)', marginTop: '.9rem', fontWeight: 700 }}>View details →</div>
+          </Link>
+        ))}
+        {products.length === 0 && <p style={{ color: 'var(--ink-faint)' }}>No products in this category yet.</p>}
+      </div>
+    </main>
+  );
+}

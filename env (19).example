@@ -1,0 +1,240 @@
+import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+// Reuse one connection across Next.js dev-mode hot reloads, same pattern
+// as the Prisma singleton this replaced.
+const globalForDb = globalThis as unknown as { sqliteDb?: DatabaseSync };
+
+function open(): DatabaseSync {
+  const dbPath = process.env.DATABASE_FILE ?? join(process.cwd(), 'dev.db');
+  const conn = new DatabaseSync(dbPath);
+  conn.exec('PRAGMA foreign_keys = ON;');
+  const schema = readFileSync(join(process.cwd(), 'src/db/schema.sql'), 'utf8');
+  conn.exec(schema);
+  return conn;
+}
+
+export const raw = globalForDb.sqliteDb ?? open();
+if (process.env.NODE_ENV !== 'production') globalForDb.sqliteDb = raw;
+
+export function newId(): string {
+  return randomUUID();
+}
+
+// ---------- Types ----------
+export interface ProductCategory {
+  id: string; slug: string; title: string; tag: string; icon: string; summary: string; sort_order: number;
+}
+export interface ProductRow {
+  id: string; slug: string; title: string; category_id: string; summary: string; application: string;
+  icon: string; datasheet_url: string | null; status: string; sort_order: number;
+}
+export interface ProductWithCategory extends ProductRow {
+  category_title: string; category_tag: string; category_slug: string;
+}
+export interface Solution { id: string; title: string; description: string; icon: string; sort_order: number; }
+export interface IndustryRow { id: string; slug: string; title: string; icon: string; points_json: string; sort_order: number; }
+export interface GalleryImageRow {
+  id: string; category: string; filename: string; caption: string | null; featured: number; status: string; sort_order: number;
+}
+export interface QuoteRequestRow {
+  id: string; ref_number: string; contact_name: string; contact_email: string; contact_phone: string;
+  company: string | null; sector: string; message: string | null; status: string; created_at: string;
+}
+export interface QuoteItemRow { id: string; quote_request_id: string; product_name: string; quantity: string | null; }
+export interface ConversationRow {
+  id: string; ticket_id: string; visitor_session_id: string; status: string; channel: string;
+  wa_conversation_id: string | null; page_context: string | null; created_at: string; last_message_at: string;
+}
+export interface MessageRow {
+  id: string; conversation_id: string; direction: string; body: string; wa_message_id: string | null;
+  status: string; created_at: string;
+}
+export interface AdminUserRow { id: string; email: string; password_hash: string; role: string; created_at: string; }
+
+// ---------- Product categories ----------
+export function getProductCategories(): ProductCategory[] {
+  return raw.prepare('SELECT * FROM product_category ORDER BY sort_order ASC').all() as unknown as ProductCategory[];
+}
+
+// ---------- Products ----------
+export function getProducts(opts: { categorySlug?: string; take?: number } = {}): ProductWithCategory[] {
+  const take = opts.take ?? 200;
+  if (opts.categorySlug) {
+    return raw
+      .prepare(
+        `SELECT p.*, c.title as category_title, c.tag as category_tag, c.slug as category_slug
+         FROM product p JOIN product_category c ON c.id = p.category_id
+         WHERE p.status = 'PUBLISHED' AND c.slug = ?
+         ORDER BY p.sort_order ASC LIMIT ?`
+      )
+      .all(opts.categorySlug, take) as unknown as ProductWithCategory[];
+  }
+  return raw
+    .prepare(
+      `SELECT p.*, c.title as category_title, c.tag as category_tag, c.slug as category_slug
+       FROM product p JOIN product_category c ON c.id = p.category_id
+       WHERE p.status = 'PUBLISHED'
+       ORDER BY p.sort_order ASC LIMIT ?`
+    )
+    .all(take) as unknown as ProductWithCategory[];
+}
+
+export function getMachineryProducts(): ProductWithCategory[] {
+  return raw
+    .prepare(
+      `SELECT p.*, c.title as category_title, c.tag as category_tag, c.slug as category_slug
+       FROM product p JOIN product_category c ON c.id = p.category_id
+       WHERE p.status = 'PUBLISHED' AND c.tag = 'Machinery'
+       ORDER BY p.sort_order ASC`
+    )
+    .all() as unknown as ProductWithCategory[];
+}
+
+export function getProductBySlug(slug: string): ProductWithCategory | undefined {
+  return raw
+    .prepare(
+      `SELECT p.*, c.title as category_title, c.tag as category_tag, c.slug as category_slug
+       FROM product p JOIN product_category c ON c.id = p.category_id
+       WHERE p.slug = ?`
+    )
+    .get(slug) as unknown as ProductWithCategory | undefined;
+}
+
+export function getRelatedProducts(categoryId: string, excludeId: string, take = 3): ProductRow[] {
+  return raw
+    .prepare(`SELECT * FROM product WHERE category_id = ? AND id != ? AND status = 'PUBLISHED' LIMIT ?`)
+    .all(categoryId, excludeId, take) as unknown as ProductRow[];
+}
+
+export function countProducts(): number {
+  const row = raw.prepare('SELECT COUNT(*) as n FROM product').get() as { n: number };
+  return row.n;
+}
+
+// ---------- Solutions & industries ----------
+export function getSolutions(): Solution[] {
+  return raw.prepare('SELECT * FROM solution ORDER BY sort_order ASC').all() as unknown as Solution[];
+}
+
+export function getIndustries(): Array<Omit<IndustryRow, 'points_json'> & { points: string[] }> {
+  const rows = raw.prepare('SELECT * FROM industry ORDER BY sort_order ASC').all() as unknown as IndustryRow[];
+  return rows.map((r) => ({ ...r, points: JSON.parse(r.points_json) as string[] }));
+}
+
+// ---------- Gallery ----------
+export function getGalleryImages(opts: { category?: string; take?: number } = {}): GalleryImageRow[] {
+  const take = opts.take ?? 200;
+  if (opts.category) {
+    return raw
+      .prepare(`SELECT * FROM gallery_image WHERE status='PUBLISHED' AND category = ? ORDER BY featured DESC, sort_order ASC LIMIT ?`)
+      .all(opts.category, take) as unknown as GalleryImageRow[];
+  }
+  return raw
+    .prepare(`SELECT * FROM gallery_image WHERE status='PUBLISHED' ORDER BY featured DESC, sort_order ASC LIMIT ?`)
+    .all(take) as unknown as GalleryImageRow[];
+}
+
+export function getGalleryCategories(): string[] {
+  const rows = raw.prepare('SELECT DISTINCT category FROM gallery_image ORDER BY category ASC').all() as unknown as { category: string }[];
+  return rows.map((r) => r.category);
+}
+
+// ---------- Quote requests ----------
+export function generateRefNumber(): string {
+  const year = new Date().getFullYear();
+  const rand = Math.floor(100000 + Math.random() * 900000);
+  return `SKT-${year}-${rand}`;
+}
+
+export function createQuoteRequest(data: {
+  contactName: string; contactEmail: string; contactPhone: string; company?: string;
+  sector: string; message?: string; items: Array<{ productName: string; quantity?: string }>;
+}): { id: string; refNumber: string } {
+  const id = newId();
+  const refNumber = generateRefNumber();
+  raw
+    .prepare(
+      `INSERT INTO quote_request (id, ref_number, contact_name, contact_email, contact_phone, company, sector, message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, refNumber, data.contactName, data.contactEmail, data.contactPhone, data.company ?? null, data.sector, data.message ?? null);
+
+  const insertItem = raw.prepare(`INSERT INTO quote_request_item (id, quote_request_id, product_name, quantity) VALUES (?, ?, ?, ?)`);
+  for (const item of data.items) {
+    insertItem.run(newId(), id, item.productName, item.quantity ?? null);
+  }
+  return { id, refNumber };
+}
+
+export function getQuoteRequests(take = 100): Array<QuoteRequestRow & { items: QuoteItemRow[] }> {
+  const quotes = raw.prepare('SELECT * FROM quote_request ORDER BY created_at DESC LIMIT ?').all(take) as unknown as QuoteRequestRow[];
+  const itemStmt = raw.prepare('SELECT * FROM quote_request_item WHERE quote_request_id = ?');
+  return quotes.map((q) => ({ ...q, items: itemStmt.all(q.id) as unknown as QuoteItemRow[] }));
+}
+
+export function countNewQuoteRequests(): number {
+  const row = raw.prepare(`SELECT COUNT(*) as n FROM quote_request WHERE status = 'NEW'`).get() as { n: number };
+  return row.n;
+}
+
+// ---------- Conversations & messages ----------
+export function createConversationWithMessage(data: {
+  visitorSessionId: string; pageContext?: string; direction: 'inbound' | 'outbound'; body: string;
+}): { id: string; ticketId: string } {
+  const id = newId();
+  const ticketId = `TCK-${Date.now().toString(36).toUpperCase()}-${newId().slice(0, 4).toUpperCase()}`;
+  raw
+    .prepare(`INSERT INTO conversation (id, ticket_id, visitor_session_id, page_context, channel) VALUES (?, ?, ?, ?, 'web-intake')`)
+    .run(id, ticketId, data.visitorSessionId, data.pageContext ?? null);
+  raw
+    .prepare(`INSERT INTO message (id, conversation_id, direction, body, status) VALUES (?, ?, ?, ?, 'received')`)
+    .run(newId(), id, data.direction, data.body);
+  return { id, ticketId };
+}
+
+export function findConversationByWaId(waId: string): ConversationRow | undefined {
+  return raw.prepare('SELECT * FROM conversation WHERE wa_conversation_id = ?').get(waId) as unknown as ConversationRow | undefined;
+}
+
+export function createWhatsAppConversation(waId: string): ConversationRow {
+  const id = newId();
+  const ticketId = `TCK-WA-${waId}`;
+  raw
+    .prepare(`INSERT INTO conversation (id, ticket_id, visitor_session_id, wa_conversation_id, channel) VALUES (?, ?, ?, ?, 'whatsapp')`)
+    .run(id, ticketId, waId, waId);
+  return findConversationByWaId(waId)!;
+}
+
+export function addMessage(conversationId: string, data: { direction: string; body: string; waMessageId?: string }): void {
+  raw
+    .prepare(`INSERT INTO message (id, conversation_id, direction, body, wa_message_id, status) VALUES (?, ?, ?, ?, ?, 'received')`)
+    .run(newId(), conversationId, data.direction, data.body, data.waMessageId ?? null);
+  raw.prepare(`UPDATE conversation SET last_message_at = datetime('now'), status = 'OPEN' WHERE id = ?`).run(conversationId);
+}
+
+export function getConversations(take = 100): Array<ConversationRow & { messages: MessageRow[] }> {
+  const convos = raw.prepare('SELECT * FROM conversation ORDER BY last_message_at DESC LIMIT ?').all(take) as unknown as ConversationRow[];
+  const msgStmt = raw.prepare('SELECT * FROM message WHERE conversation_id = ? ORDER BY created_at ASC');
+  return convos.map((c) => ({ ...c, messages: msgStmt.all(c.id) as unknown as MessageRow[] }));
+}
+
+export function countOpenConversations(): number {
+  const row = raw.prepare(`SELECT COUNT(*) as n FROM conversation WHERE status = 'OPEN'`).get() as { n: number };
+  return row.n;
+}
+
+// ---------- Admin ----------
+export function getAdminUserByEmail(email: string): AdminUserRow | undefined {
+  return raw.prepare('SELECT * FROM admin_user WHERE email = ?').get(email) as unknown as AdminUserRow | undefined;
+}
+
+export function createAdminUser(email: string, passwordHash: string, role: string): void {
+  raw.prepare(`INSERT INTO admin_user (id, email, password_hash, role) VALUES (?, ?, ?, ?)`).run(newId(), email, passwordHash, role);
+}
+
+export function createAuditLog(actorId: string | null, action: string, detail?: string): void {
+  raw.prepare(`INSERT INTO audit_log (id, actor_id, action, detail) VALUES (?, ?, ?, ?)`).run(newId(), actorId, action, detail ?? null);
+}

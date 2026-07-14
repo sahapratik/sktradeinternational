@@ -1,0 +1,121 @@
+import Link from 'next/link';
+import { getProductCategories, getProducts, getSolutions, getGalleryImages } from '@/db';
+
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const categories = getProductCategories();
+  const products = getProducts({ take: 8 });
+  const solutions = getSolutions();
+  const gallery = getGalleryImages({ take: 8 });
+
+  const years = new Date().getFullYear() - 2008;
+
+  return (
+    <main>
+      <section className="section" style={{ paddingBlockStart: '4rem' }}>
+        <div className="wrap">
+          <p className="eyebrow">Ceramic materials &amp; machinery · Since 2008</p>
+          <h1 style={{ fontSize: 'clamp(2.4rem, 3vw + 1.4rem, 4.4rem)', maxWidth: '16ch', lineHeight: 1.05 }}>
+            Materials. Machinery. Precision.
+          </h1>
+          <p style={{ maxWidth: '46ch', marginTop: '1.2rem', fontSize: '1.1rem', color: 'var(--ink-soft)' }}>
+            Supporting Bangladesh&apos;s ceramic industry with globally sourced raw materials, advanced machinery and
+            dependable technical expertise since 2008.
+          </p>
+          <div style={{ display: 'flex', gap: '.9rem', flexWrap: 'wrap', marginTop: '1.8rem' }}>
+            <Link href="/products" className="btn btn--primary">Explore Our Products</Link>
+            <Link href="/contact" className="btn btn--ghost">Request a Quote</Link>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ borderBlock: '1px solid var(--line)', padding: '2rem 0' }}>
+        <div className="wrap" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))', gap: '1.5rem', textAlign: 'center' }}>
+          <div><div style={{ fontFamily: 'var(--ff-display)', fontSize: '2rem' }}>{years}</div><div style={{ fontSize: '.82rem', color: 'var(--ink-soft)' }}>Years in the ceramic sector</div></div>
+          <div><div style={{ fontFamily: 'var(--ff-display)', fontSize: '2rem' }}>3</div><div style={{ fontSize: '.82rem', color: 'var(--ink-soft)' }}>Core industries served</div></div>
+          <div><div style={{ fontFamily: 'var(--ff-display)', fontSize: '1.4rem', color: 'var(--ink-faint)' }}>—</div><div style={{ fontSize: '.82rem', color: 'var(--ink-soft)' }}>Global principals (added once confirmed)</div></div>
+        </div>
+      </section>
+
+      <section className="section" id="categories">
+        <div className="wrap">
+          <p className="eyebrow">Product categories</p>
+          <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.6rem)', marginBottom: '2rem' }}>Materials and machinery, by production line</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px,1fr))', gap: '1.2rem' }}>
+            {categories.map((c) => (
+              <div key={c.id} className="card" style={{ padding: '1.6rem' }}>
+                <div style={{ fontSize: '.72rem', textTransform: 'uppercase', color: 'var(--copper)', fontWeight: 700, marginBottom: '.4rem' }}>{c.tag}</div>
+                <h3 style={{ fontSize: '1.1rem', marginBottom: '.5rem' }}>{c.title}</h3>
+                <p style={{ fontSize: '.9rem', color: 'var(--ink-soft)' }}>{c.summary}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section section-alt">
+        <div className="wrap">
+          <p className="eyebrow">Featured products</p>
+          <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.6rem)', marginBottom: '2rem' }}>From our supply chain</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px,1fr))', gap: '1.2rem' }}>
+            {products.map((p) => (
+              <div key={p.id} className="card" style={{ padding: '1.4rem' }}>
+                <div style={{ fontSize: '.7rem', textTransform: 'uppercase', color: 'var(--ink-faint)', fontWeight: 700 }}>{p.category_tag}</div>
+                <h4 style={{ fontSize: '1rem', margin: '.4rem 0 .5rem' }}>{p.title}</h4>
+                <p style={{ fontSize: '.87rem', color: 'var(--ink-soft)' }}>{p.summary}</p>
+                <Link href={`/contact?product=${encodeURIComponent(p.title)}`} className="btn btn--ghost" style={{ marginTop: '.9rem', padding: '.5em 1em', fontSize: '.8rem' }}>Add to Quote</Link>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+            <Link href="/products" className="btn btn--ghost">View full catalogue</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="wrap">
+          <p className="eyebrow">Solutions</p>
+          <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.6rem)', marginBottom: '2rem' }}>Support beyond the invoice</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px,1fr))', gap: '1.2rem' }}>
+            {solutions.map((s) => (
+              <div key={s.id} className="card" style={{ padding: '1.4rem' }}>
+                <h4 style={{ fontSize: '1rem', marginBottom: '.4rem' }}>{s.title}</h4>
+                <p style={{ fontSize: '.87rem', color: 'var(--ink-soft)' }}>{s.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section section-alt">
+        <div className="wrap">
+          <p className="eyebrow">Gallery</p>
+          <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.6rem)', marginBottom: '2rem' }}>From our own archive</h2>
+          <div style={{ columns: '4 220px', columnGap: '1rem' }}>
+            {gallery.map((g) => (
+              <div key={g.id} style={{ breakInside: 'avoid', marginBottom: '1rem', borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--line)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/gallery/${g.filename}`} alt={g.caption ?? g.category} loading="lazy" />
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+            <Link href="/gallery" className="btn btn--ghost">View full gallery</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="section" style={{ textAlign: 'center' }}>
+        <div className="wrap">
+          <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.6rem)', marginBottom: '1rem' }}>Discuss Your Requirements</h2>
+          <p style={{ color: 'var(--ink-soft)', maxWidth: '44ch', margin: '0 auto 1.6rem' }}>
+            Tell us what your production line needs — we&apos;ll follow up with sourcing options and a clear quotation.
+          </p>
+          <Link href="/contact" className="btn btn--primary">Request a Quote</Link>
+        </div>
+      </section>
+    </main>
+  );
+}
