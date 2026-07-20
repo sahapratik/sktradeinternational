@@ -1,0 +1,10 @@
+import { NextResponse } from 'next/server';
+import { getProducts } from '@/db';
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const category = searchParams.get('category') ?? undefined;
+  const take = Math.min(Number(searchParams.get('take') ?? 50), 100);
+  const products = await getProducts({ categorySlug: category, take });
+  return NextResponse.json({ products });
+}
